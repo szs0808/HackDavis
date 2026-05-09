@@ -1,6 +1,13 @@
 import { StatCard } from "@/components/StatCard";
 import { DonationChart } from "@/components/DonationChart";
 import {
+  getDashboardStats,
+  getRecentDonations,
+  getChartData,
+  getCategoryBreakdown,
+  type DonationRow,
+} from "@/lib/donations";
+import {
   Camera,
   DollarSign,
   Package,
@@ -8,68 +15,68 @@ import {
   Utensils,
   Droplets,
   Plus,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 
-const RECENT = [
-  {
-    id: "d1",
-    type: "financial",
-    label: "Acme Corp",
-    sub: "via Stripe",
-    amount: "$5,000",
-    time: "1d ago",
-  },
-  {
-    id: "d2",
-    type: "physical",
-    label: "Canned goods",
-    sub: "240 items · Food",
-    amount: "$360",
-    time: "2d ago",
-  },
-  {
-    id: "d3",
-    type: "financial",
-    label: "Jane Smith",
-    sub: "via PayPal",
-    amount: "$1,200",
-    time: "3d ago",
-  },
-  {
-    id: "d4",
-    type: "physical",
-    label: "Winter coats",
-    sub: "85 items · Clothing",
-    amount: "$2,125",
-    time: "4d ago",
-  },
-  {
-    id: "d5",
-    type: "financial",
-    label: "Anonymous",
-    sub: "via Check",
-    amount: "$750",
-    time: "5d ago",
-  },
-  {
-    id: "d6",
-    type: "physical",
-    label: "Toiletries",
-    sub: "120 items · Hygiene",
-    amount: "$480",
-    time: "6d ago",
-  },
-];
+const CATEGORY_COLORS: Record<string, string> = {
+  food: "bg-gl-gold",
+  clothing: "bg-gl-purple",
+  hygiene: "bg-gl-green",
+  books: "bg-gl-blue",
+  electronics: "bg-gl-red",
+  medical: "bg-gl-red",
+  other: "bg-gl-raised",
+};
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   food: <Utensils className="w-3.5 h-3.5" />,
   clothing: <Shirt className="w-3.5 h-3.5" />,
   hygiene: <Droplets className="w-3.5 h-3.5" />,
-  physical: <Package className="w-3.5 h-3.5" />,
 };
 
-export default function DashboardPage() {
+function relativeTime(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (hours < 1) return "Just now";
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return "1d ago";
+  return `${days}d ago`;
+}
+
+function donationLabel(d: DonationRow) {
+  if (d.type === "financial") return d.donor_name || "Anonymous";
+  return d.subcategory || d.category || "Donation";
+}
+
+function donationSub(d: DonationRow) {
+  if (d.type === "financial") return d.source ? `via ${d.source}` : "—";
+  const parts = [
+    d.quantity && d.unit ? `${d.quantity} ${d.unit}` : null,
+    d.category
+      ? d.category.charAt(0).toUpperCase() + d.category.slice(1)
+      : null,
+  ].filter(Boolean);
+  return parts.join(" · ") || "—";
+}
+
+function donationAmount(d: DonationRow) {
+  const val = d.type === "financial" ? d.amount : d.estimated_value_usd;
+  if (val == null) return "—";
+  return `$${val.toLocaleString("en-US", { minimumFractionDigits: 0 })}`;
+}
+
+export default async function DashboardPage() {
+  const [stats, recent, chartData, categories] = await Promise.all([
+    getDashboardStats(),
+    getRecentDonations(6),
+    getChartData(30),
+    getCategoryBreakdown(),
+  ]);
+
+  const notConfigured = stats === null;
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       {/* Header */}
@@ -77,7 +84,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-gl-text">Impact Dashboard</h1>
           <p className="text-sm text-gl-muted mt-0.5">
-            Food for All Foundation · Demo Mode
+            Food for All Foundation
           </p>
         </div>
         <div className="flex gap-3">
@@ -96,41 +103,60 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Supabase not configured warning */}
+      {notConfigured && (
+        <div className="flex items-start gap-3 p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5 mb-6">
+          <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-yellow-400">
+              Supabase not configured
+            </p>
+            <p className="text-xs text-gl-muted mt-0.5">
+              Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to see
+              live data.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           label="Total Raised"
-          value="$29,450"
+          value={
+            notConfigured
+              ? "—"
+              : `$${stats.totalRaised.toLocaleString("en-US", { minimumFractionDigits: 0 })}`
+          }
           sub="All-time financial donations"
-          trend={12}
           accent="gold"
         />
         <StatCard
           label="Physical Value"
-          value="$8,240"
+          value={
+            notConfigured
+              ? "—"
+              : `$${stats.physicalValue.toLocaleString("en-US", { minimumFractionDigits: 0 })}`
+          }
           sub="Fair market value logged"
-          trend={7}
           accent="purple"
         />
         <StatCard
           label="Logs This Month"
-          value="34"
+          value={notConfigured ? "—" : String(stats.logsThisMonth)}
           sub="Financial + physical combined"
-          trend={22}
           accent="green"
         />
         <StatCard
           label="Donors"
-          value="47"
+          value={notConfigured ? "—" : String(stats.uniqueDonors)}
           sub="Unique contributors"
-          trend={5}
           accent="default"
         />
       </div>
 
-      {/* Chart + Activity split */}
+      {/* Chart + Category split */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Chart */}
         <div className="lg:col-span-2 bg-gl-surface border border-gl-border rounded-2xl p-6">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -150,7 +176,7 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
-          <DonationChart />
+          <DonationChart data={chartData} />
         </div>
 
         {/* Category breakdown */}
@@ -158,39 +184,28 @@ export default function DashboardPage() {
           <h2 className="text-base font-semibold text-gl-text mb-5">
             By Category
           </h2>
-          <div className="space-y-4">
-            {[
-              { label: "Food", pct: 42, value: "$3,460", color: "bg-gl-gold" },
-              {
-                label: "Clothing",
-                pct: 28,
-                value: "$2,310",
-                color: "bg-gl-purple",
-              },
-              {
-                label: "Hygiene",
-                pct: 18,
-                value: "$1,485",
-                color: "bg-gl-green",
-              },
-              { label: "Other", pct: 12, value: "$985", color: "bg-gl-blue" },
-            ].map(({ label, pct, value, color }) => (
-              <div key={label}>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-gl-muted font-medium">{label}</span>
-                  <span className="font-mono font-semibold text-gl-text">
-                    {value}
-                  </span>
+          {categories.length === 0 ? (
+            <p className="text-sm text-gl-muted">No physical donations yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {categories.map(({ label, value, pct }) => (
+                <div key={label}>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-gl-muted font-medium">{label}</span>
+                    <span className="font-mono font-semibold text-gl-text">
+                      ${value.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-gl-raised rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${CATEGORY_COLORS[label.toLowerCase()] ?? "bg-gl-muted"}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-1.5 bg-gl-raised rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${color}`}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -207,42 +222,57 @@ export default function DashboardPage() {
             View all →
           </Link>
         </div>
-        <div className="divide-y divide-gl-border">
-          {RECENT.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-4 px-6 py-3.5 hover:bg-gl-raised/50 transition-colors"
+
+        {recent.length === 0 ? (
+          <div className="px-6 py-10 text-center">
+            <p className="text-sm text-gl-muted">No donations logged yet.</p>
+            <Link
+              href="/log/physical"
+              className="inline-flex items-center gap-2 mt-3 text-sm font-semibold text-gl-purple hover:text-gl-purple-light transition-colors"
             >
+              <Camera className="w-4 h-4" /> Log your first donation
+            </Link>
+          </div>
+        ) : (
+          <div className="divide-y divide-gl-border">
+            {recent.map((item) => (
               <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                  item.type === "financial"
-                    ? "bg-gl-gold/15 text-gl-gold"
-                    : "bg-gl-purple/15 text-gl-purple"
-                }`}
+                key={item.id}
+                className="flex items-center gap-4 px-6 py-3.5 hover:bg-gl-raised/50 transition-colors"
               >
-                {item.type === "financial" ? (
-                  <DollarSign className="w-4 h-4" />
-                ) : (
-                  CATEGORY_ICONS[
-                    item.sub.split("·")[1]?.trim().toLowerCase() || "physical"
-                  ] || <Package className="w-4 h-4" />
-                )}
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    item.type === "financial"
+                      ? "bg-gl-gold/15 text-gl-gold"
+                      : "bg-gl-purple/15 text-gl-purple"
+                  }`}
+                >
+                  {item.type === "financial" ? (
+                    <DollarSign className="w-4 h-4" />
+                  ) : (
+                    (CATEGORY_ICONS[item.category ?? ""] ?? (
+                      <Package className="w-4 h-4" />
+                    ))
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gl-text truncate">
+                    {donationLabel(item)}
+                  </p>
+                  <p className="text-xs text-gl-muted">{donationSub(item)}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-mono text-sm font-bold text-gl-gold">
+                    {donationAmount(item)}
+                  </p>
+                  <p className="text-[11px] text-gl-muted">
+                    {relativeTime(item.donated_at)}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gl-text truncate">
-                  {item.label}
-                </p>
-                <p className="text-xs text-gl-muted">{item.sub}</p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="font-mono text-sm font-bold text-gl-gold">
-                  {item.amount}
-                </p>
-                <p className="text-[11px] text-gl-muted">{item.time}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* FAB */}

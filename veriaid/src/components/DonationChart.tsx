@@ -10,28 +10,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Generate 30-day mock trend data
-function generateTrendData() {
-  const data = [];
-  const now = Date.now();
-  let cumulative = 4200;
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(now - i * 24 * 60 * 60 * 1000);
-    const daily = Math.floor(Math.random() * 800 + 100);
-    cumulative += daily;
-    data.push({
-      date: date.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      }),
-      financial: Math.floor(Math.random() * 1500 + 200),
-      physical: Math.floor(Math.random() * 600 + 50),
-    });
-  }
-  return data;
+interface ChartPoint {
+  date: string;
+  financial: number;
+  physical: number;
 }
-
-const data = generateTrendData();
 
 const CustomTooltip = ({
   active,
@@ -48,14 +31,15 @@ const CustomTooltip = ({
       <p className="text-gl-muted mb-2 font-medium">{label}</p>
       {payload.map((p) => (
         <p key={p.name} className="font-mono font-semibold text-gl-text">
-          {p.name === "financial" ? "💰" : "📦"} ${p.value.toLocaleString()}
+          {p.name === "financial" ? "Financial" : "Physical"} $
+          {p.value.toLocaleString()}
         </p>
       ))}
     </div>
   );
 };
 
-export function DonationChart() {
+export function DonationChart({ data }: { data: ChartPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={220}>
       <AreaChart
