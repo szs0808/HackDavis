@@ -2,7 +2,7 @@
 
 ## Vercel Setup
 
-**Root Directory must be set to `giveledger` (not the repo root).
+\*\*Root Directory must be set to `giveledger` (not the repo root).
 
 In Vercel project settings → General → Root Directory must be set to `giveledger`
 
